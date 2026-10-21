@@ -1,0 +1,38 @@
+services:
+  rabbitmq:
+    # Версия закреплена: в 4.3 nack перестал засчитываться в delivery-limit, проект рассчитан на это поведение.
+    image: rabbitmq:4.3-management
+    hostname: rabbit # имя узла фиксировано, иначе после пересоздания контейнера брокер "не узнает" данные в volume
+    ports:
+      # Только localhost: в этом образе guest/guest пускают не только с локального адреса.
+      - "127.0.0.1:5672:5672"   # AMQP
+      - "127.0.0.1:15672:15672" # management UI: http://localhost:15672 (guest / guest)
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mailpipeline
+    ports:
+      - "127.0.0.1:5433:5432" # 5433, чтобы не конфликтовать с локальным PostgreSQL
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      # По TCP: init.sql выполняет временный сервер, который слушает только unix-сокет,
+      # и проверка через сокет сочла бы базу готовой раньше времени.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "mailpipeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  rabbitmq-data:
+  pg-data:
